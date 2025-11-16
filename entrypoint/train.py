@@ -1,6 +1,17 @@
+import sys
+import os
+
+# Get the absolute path of the directory containing this script (entrypoint)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the absolute path of the project's root directory (one level up)
+project_root = os.path.dirname(script_dir)
+# Add the project root to Python's path
+sys.path.insert(0, project_root)
+
+
 import torch
 import torch.nn.functional as F
-from model import MultiTaskGNN  # Import the model we just created
+from src.model import MultiTaskGNN  # Import the model 
 
 # --- 1. Configuration ---
 LEARNING_RATE = 0.005
@@ -59,8 +70,11 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
-    data = torch.load('data/processed_graph.pt')
+    data_path = 'data/02-preprocessed/processed_graph.pt'
+    data = torch.load(data_path)
+
     data = data.to(device)
+
     print("\nLoaded data object:")
     print(data)
 
@@ -105,8 +119,9 @@ def main():
     print(f"Final Test Loss: {test_loss:.4f}")
     
     # --- 6. Save the Best Model ---
-    torch.save(best_model_state, 'models/best_model.pt')
-    print("\nBest model weights saved to 'best_model.pt'")
+    model_save_path = 'models/best_model.pt'
+    torch.save(best_model_state, model_save_path)
+    print(f"\nBest model weights saved to '{model_save_path}'")
 
 if __name__ == '__main__':
     main()
