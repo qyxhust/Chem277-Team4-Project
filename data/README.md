@@ -1,6 +1,6 @@
-# Cross-Disease Analysis of Neurodegenerative Proteomics using a Graph Attention Network
+# Cross-Disease Proteome analysis using a Graph Attention Network
 
-Our goal is to use a Graph Neural Network (GNN) to discover shared functional modules of proteins across four neurodegenerative diseases (AD, PD, FTD, ALS) by integrating proteomics data with a protein-protein interaction (PPI) network.
+Our goal is to use a Graph Neural Network (GNN) to discover shared functional modules of plasma proteins across four neurodegenerative diseases (AD, PD, FTD, ALS) by integrating proteomics data with a protein-protein interaction (PPI) network.
 
 ## Project Workflow Summary
 
