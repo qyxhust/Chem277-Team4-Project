@@ -21,9 +21,9 @@ import seaborn as sns
 
 
 def main():
-    print("--- Clustering Optimization and Profiling ---")
+    print("Clustering Optimization and Profiling")
     
-    # --- 1. Load Data and Model  ---
+    # 1. Load Data and Model 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     data = torch.load('data/02-preprocessed/processed_graph.pt')
@@ -35,7 +35,7 @@ def main():
     model.eval()
     print("Loaded data and trained model.")
 
-    # --- 2. Extract Embeddings and run UMAP ---
+    # 2. Extract Embeddings and run UMAP
     with torch.no_grad():
         _, _, _, _, shared_embeddings = model(data)
     embeddings_np = shared_embeddings.cpu().numpy()
@@ -44,8 +44,8 @@ def main():
     reducer = umap.UMAP(n_neighbors=20, min_dist=0.1, n_components=2, random_state=42)
     embedding_2d = reducer.fit_transform(embeddings_np)
 
-    # --- 3. Technical Benchmarking for Clustering Quality ---
-    print("\n--- Benchmarking Clustering Quality (Silhouette Score) ---")
+    # 3. Technical Benchmarking for Clustering Quality 
+    print("\nBenchmarking Clustering Quality (Silhouette Score) ")
     
     # We will test a range of min_cluster_size values
     min_cluster_sizes_to_test = [15, 25, 35, 50, 75, 100]
@@ -72,10 +72,10 @@ def main():
         else:
             print(f"min_cluster_size = {min_size:3d} -> Found {num_clusters:2d} clusters. Not enough to score.")
 
-    print(f"\n---> Best result found with min_cluster_size = {best_min_size}. Using these clusters for analysis.")
+    print(f"\nBest result found with min_cluster_size = {best_min_size}. Using these clusters for analysis.")
     cluster_labels = best_labels # Use the best labels for the rest of the script
     
-    # --- 4. Generate Plots and Profiles (using the BEST clusters) ---
+    # 4. Generate Plots and Profiles (using the BEST clusters) 
     num_clusters = len(np.unique(cluster_labels)) - (1 if -1 in cluster_labels else 0)
     
     results_df = pd.DataFrame(embedding_2d, columns=['UMAP1', 'UMAP2'])
@@ -83,11 +83,9 @@ def main():
     results_df['Cluster'] = ['Cluster ' + str(label) for label in cluster_labels]
     results_df.loc[results_df['Cluster'] == 'Cluster -1', 'Cluster'] = 'Noise'
 
-    # ... generate colored UMAP ...
-    # ... generate cluster profile heatmap ...
-    # ... export protein_clusters.csv ...
+    
 
-    # --- Plotting and export code ---
+    #  Plotting and export code 
     plt.figure(figsize=(14, 10))
     sns.scatterplot(data=results_df, x='UMAP1', y='UMAP2', hue='Cluster', palette=sns.color_palette("hsv", n_colors=num_clusters + 1), alpha=0.7, s=15)
     plt.title(f'UMAP Projection with Optimal HDBSCAN Clusters (min_size={best_min_size})', fontsize=16)
