@@ -13,7 +13,7 @@ import torch
 import torch.nn.functional as F
 from src.model import MultiTaskGNN  # Import the model 
 
-# --- 1. Configuration ---
+# Configuration
 LEARNING_RATE = 0.005
 WEIGHT_DECAY = 5e-4
 EPOCHS = 300
@@ -64,9 +64,9 @@ def evaluate(model, data, mask):
 
 def main():
     """Main function to run the training and evaluation process."""
-    print("--- Starting the GNN Training Process ---")
+    print("Starting the GNN Training Process")
     
-    # --- 2. Load Data ---
+    #  2. Load Data 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
@@ -78,7 +78,7 @@ def main():
     print("\nLoaded data object:")
     print(data)
 
-    # --- 3. Initialize Model and Optimizer ---
+    # 3. Initialize Model and Optimizer 
     model = MultiTaskGNN(
         in_channels=data.num_node_features,
         hidden_channels=HIDDEN_CHANNELS,
@@ -93,11 +93,11 @@ def main():
     print("\nModel architecture:")
     print(model)
 
-    # --- 4. Training Loop ---
+    #  4. Training Loop 
     best_val_loss = float('inf')
     best_model_state = None
 
-    print("\n--- Starting Training ---")
+    print("\nStarting Training")
     for epoch in range(1, EPOCHS + 1):
         train_loss = train(model, data, optimizer, criterion)
         val_loss = evaluate(model, data, data.val_mask)
@@ -109,16 +109,16 @@ def main():
         else:
             print(f"Epoch {epoch:03d}: Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
 
-    # --- 5. Final Evaluation on Test Set ---
+    # 5. Final Evaluation on Test Set 
     # Load the best performing model
     model.load_state_dict(best_model_state)
     
     test_loss = evaluate(model, data, data.test_mask)
-    print("\n--- Training Complete ---")
+    print("\n Training Complete")
     print(f"Best Validation Loss: {best_val_loss:.4f}")
     print(f"Final Test Loss: {test_loss:.4f}")
     
-    # --- 6. Save the Best Model ---
+    # 6. Save the Best Model 
     model_save_path = 'models/best_model.pt'
     torch.save(best_model_state, model_save_path)
     print(f"\nBest model weights saved to '{model_save_path}'")
