@@ -31,15 +31,15 @@ class MultiTaskGNN(torch.nn.Module):
         # Second GAT layer: aggregates information from the first layer.
         # The input channels must be hidden_channels * heads from the previous layer.
         # We use a single head here to get the final shared embedding.
-        self.conv2 = GATv2Conv(hidden_channels * heads, hidden_channels, heads=1, dropout=dropout)
+        self.conv2 = GATv2Conv(hidden_channels * heads, out_channels, heads=1, concat = False, dropout=dropout)
 
         # Output layers (prediction heads)
         # We create a separate linear layer for each of the 4 regression tasks.
         # This allows the model to learn a specific final transformation for each disease.
-        self.out_ad = nn.Linear(hidden_channels, 1)
-        self.out_pd = nn.Linear(hidden_channels, 1)
-        self.out_ftd = nn.Linear(hidden_channels, 1)
-        self.out_als = nn.Linear(hidden_channels, 1)
+        # self.out_ad = nn.Linear(hidden_channels, 1)
+        # self.out_pd = nn.Linear(hidden_channels, 1)
+        # self.out_ftd = nn.Linear(hidden_channels, 1)
+        # self.out_als = nn.Linear(hidden_channels, 1)
 
     def forward(self, data):
         """
@@ -50,7 +50,7 @@ class MultiTaskGNN(torch.nn.Module):
         
         Returns:
             tuple: A tuple containing the predictions for each of the 4 tasks
-                   and the final shared node embeddings for analysis.
+                and the final shared node embeddings for analysis.
         """
         x, edge_index = data.x, data.edge_index
         
@@ -64,12 +64,13 @@ class MultiTaskGNN(torch.nn.Module):
         x = F.dropout(x, p=self.dropout, training=self.training)
         
         # Pass through the second GAT layer to get the shared embeddings
-        shared_embeddings = self.conv2(x, edge_index)
+        x = self.conv2(x, edge_index)
         
         # Generate predictions from each disease-specific output head
-        pred_ad = self.out_ad(shared_embeddings)
-        pred_pd = self.out_pd(shared_embeddings)
-        pred_ftd = self.out_ftd(shared_embeddings)
-        pred_als = self.out_als(shared_embeddings)
+        # pred_ad = self.out_ad(shared_embeddings)
+        # pred_pd = self.out_pd(shared_embeddings)
+        # pred_ftd = self.out_ftd(shared_embeddings)
+        # pred_als = self.out_als(shared_embeddings)
         
-        return pred_ad, pred_pd, pred_ftd, pred_als, shared_embeddings
+        # return pred_ad, pred_pd, pred_ftd, pred_als, shared_embeddings
+        return x
