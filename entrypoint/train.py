@@ -1,3 +1,14 @@
+import random
+import numpy as np
+import torch
+import torch.nn.functional as F
+
+
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
+torch.cuda.manual_seed_all(42)
+
 import sys
 import os
 
@@ -8,9 +19,6 @@ project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
 from src.model import MultiTaskGNN
-
-import torch
-import torch.nn.functional as F
 
 
 # hyperparameters, we can try different configurations later too
