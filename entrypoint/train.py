@@ -1,13 +1,16 @@
 import sys
 import os
-import torch
-import torch.nn.functional as F
-from src.model import MultiTaskGNN
 
 # need to add project root to path so we can import from src
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
+
+from src.model import MultiTaskGNN
+
+import torch
+import torch.nn.functional as F
 
 
 # hyperparameters, we can try different configurations later too
