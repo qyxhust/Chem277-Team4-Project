@@ -1,6 +1,8 @@
 import random
 import numpy as np
 import torch
+from datetime import datetime
+
 
 random.seed(42)
 np.random.seed(42)
@@ -15,6 +17,20 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
+# create id based on timestamp
+run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+
+# base output folders for this run
+plots_dir = os.path.join("plots", run_id)
+pred_dir  = os.path.join("data", "04-predictions", run_id)
+
+os.makedirs(plots_dir, exist_ok=True)
+os.makedirs(pred_dir, exist_ok=True)
+
+print(f"Saving plots to: {plots_dir}")
+print(f"Saving predictions to: {pred_dir}")
+
+
 from src.model import MultiTaskGNN
 import pandas as pd
 import umap.umap_ as umap
@@ -22,6 +38,16 @@ import hdbscan
 from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
 import seaborn as sns 
+
+
+
+#adding a helper function to build dataframe
+def build_embedding_df(embedding_2d, labels, data):
+    df = pd.DataFrame(embedding_2d, columns=['UMAP1', 'UMAP2'])
+    df['GeneSymbol'] = data.gene_symbols
+    df['ClusterLabel'] = labels
+    df['Cluster'] = df['ClusterLabel'].apply(lambda x: f'Cluster {x}' if x != -1 else 'Noise')
+    return df
 
 
 # load model and data
@@ -63,88 +89,144 @@ umap_model = umap.UMAP(
 embedding_2d = umap_model.fit_transform(embeddings_np)
 
 
-# now try clustering with HDBSCAN
-# need to find good min_cluster_size parameter
-# going to try some and use silhouette score to pick the best clustering
+# clustering with HDBSCAN
+
 
 print("\nTrying different clustering parameters")
 sizes_to_try = [15, 25, 35, 50, 75, 100]
-best_score = -1
-best_labels = None
-best_size = None
 
-for size in sizes_to_try:
+results = []       
+labels_dict = {}   # config_id -> labels
+
+for idx, size in enumerate(sizes_to_try):
     clusterer = hdbscan.HDBSCAN(min_cluster_size=size)
     labels = clusterer.fit_predict(embedding_2d)
 
     # count clusters (exclude noise which is -1)
     n_clusters = len(np.unique(labels[labels != -1]))
 
-    if n_clusters >= 2:
-        # only score the non-noise points
-        mask = labels != -1
-        score = silhouette_score(embedding_2d[mask], labels[mask])
-        print(f"  size={size:3d}: {n_clusters:2d} clusters, silhouette={score:.4f}")
-
-        if score > best_score:
-            best_score = score
-            best_labels = labels
-            best_size = size
-    else:
+    if n_clusters < 2:
         print(f"  size={size:3d}: only {n_clusters} clusters, skipping")
+        continue
 
-print(f"\nBest clustering: min_size={best_size}, silhouette={best_score:.4f}")
+    # only score the non-noise points
+    mask = labels != -1
+    score = silhouette_score(embedding_2d[mask], labels[mask])
 
-# make dataframe with results
-df = pd.DataFrame(embedding_2d, columns=['UMAP1', 'UMAP2'])
-df['GeneSymbol'] = data.gene_symbols
-df['Cluster'] = best_labels
-df['Cluster'] = df['Cluster'].apply(lambda x: f'Cluster {x}' if x != -1 else 'Noise')
+    config_id = f"min{size}_cfg{idx}"
+    print(f"  size={size:3d}: {n_clusters:2d} clusters, silhouette={score:.4f} (id={config_id})")
 
-n_real_clusters = len(df[df['Cluster'] != 'Noise']['Cluster'].unique())
-print(f"Total proteins: {len(df)}, Clustered: {(df['Cluster'] != 'Noise').sum()}, Noise: {(df['Cluster'] == 'Noise').sum()}")
+    results.append({
+        "config_id": config_id,
+        "min_cluster_size": size,
+        "n_clusters": n_clusters,
+        "silhouette": score,
+    })
+    labels_dict[config_id] = labels
 
-# plot the UMAP with clusters
-plt.figure(figsize=(14, 10))
-sns.scatterplot(
-    data=df,
-    x='UMAP1',
-    y='UMAP2',
-    hue='Cluster',
-    palette=sns.color_palette("hsv", n_colors=n_real_clusters + 1),
-    alpha=0.7,
-    s=15
-)
-plt.title(f'Protein Embeddings UMAP (HDBSCAN min_size={best_size})')
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+# turn into DataFrame and sort by silhouette
+results_df = pd.DataFrame(results).sort_values("silhouette", ascending=False)
+print("\nAll HDBSCAN configs sorted by silhouette:")
+print(results_df)
+
+# summary plot
+plt.figure()
+sns.barplot(data=results_df, x="min_cluster_size", y="silhouette")
+plt.xlabel("HDBSCAN min_cluster_size")
+plt.ylabel("Silhouette score")
+plt.title("Clustering quality across HDBSCAN configs")
 plt.tight_layout()
-plt.savefig('plots/protein_embeddings_clustered_umap.png', dpi=300)
-print("Saved UMAP plot")
-plt.show()
+summary_path = os.path.join(plots_dir, "hdbscan_silhouette_by_min_cluster_size.png")
+plt.savefig(summary_path, dpi=300)
+plt.close()
+print("Saved silhouette summary plot to", summary_path)
 
-# load original features and join with clusters
+
+## added a section to generate detailed outputs for top configs for clustering, then we can validate with the biological benchmarking
+# load original features 
 features = pd.read_csv('data/02-preprocessed/protein_features.csv', index_col='GeneSymbol')
-merged = features.join(df.set_index('GeneSymbol')['Cluster'])
-
-# get average beta values for each cluster
 beta_cols = ['AD_beta', 'PD_beta', 'FTD_beta', 'ALS_beta']
-cluster_avg = merged.groupby('Cluster')[beta_cols].mean()
 
-# drop noise if it exists
-if 'Noise' in cluster_avg.index:
-    cluster_avg = cluster_avg.drop('Noise')
 
-# make heatmap
-plt.figure(figsize=(8, 6))
-sns.heatmap(cluster_avg, cmap='coolwarm', annot=True, fmt=".3f", center=0)
-plt.title('Average Disease Beta Values by Cluster')
-plt.tight_layout()
-plt.savefig('plots/cluster_profile_heatmap.png', dpi=300)
-print("Saved cluster profile heatmap")
-plt.show()
+# how many configs to keep?
+top_k = min(10, len(results_df))
+print(f"\nGenerating detailed outputs for top {top_k} HDBSCAN configs")
 
-# save cluster assignments (excluding noise)
-output = df[df['Cluster'] != 'Noise'][['GeneSymbol', 'Cluster']]
-output.to_csv('data/04-predictions/protein_clusters.csv', index=False)
-print(f"\nSaved {len(output)} protein cluster assignments to data/04-predictions/protein_clusters.csv")
+for _, row in results_df.head(top_k).iterrows():
+    cfg_id = row["config_id"]
+    size = int(row["min_cluster_size"])
+    sil = row["silhouette"]
+    labels = labels_dict[cfg_id]
+
+    print(f"\nConfig {cfg_id} (min_cluster_size={size}, silhouette={sil:.3f})")
+
+    # build dataframe for this config
+    df = build_embedding_df(embedding_2d, labels, data)
+
+    # basic counts
+    n_real_clusters = len(df[df['Cluster'] != 'Noise']['Cluster'].unique())
+    print(
+        f"Total proteins: {len(df)}, "
+        f"Clustered: {(df['Cluster'] != 'Noise').sum()}, "
+        f"Noise: {(df['Cluster'] == 'Noise').sum()}, "
+        f"n_real_clusters={n_real_clusters}"
+    )
+
+    # UMAP plot for this config
+    plt.figure(figsize=(14, 10))
+    sns.scatterplot(
+        data=df,
+        x='UMAP1',
+        y='UMAP2',
+        hue='Cluster',
+        palette=sns.color_palette("hsv", n_colors=n_real_clusters + 1),
+        alpha=0.7,
+        s=15
+    )
+    plt.title(f'Protein Embeddings UMAP – {cfg_id} (min_size={size}, sil={sil:.2f})')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+
+    umap_path = os.path.join(
+        plots_dir,
+        f'protein_embeddings_umap_{cfg_id}_min{size}_sil{sil:.2f}.png'
+    )
+
+    plt.savefig(umap_path, dpi=300)
+
+    plt.close()
+    print("Saved UMAP plot:", umap_path)
+
+    # join with features to get disease betas
+    merged = features.join(df.set_index('GeneSymbol')['Cluster'])
+    cluster_avg = merged.groupby('Cluster')[beta_cols].mean()
+
+    # drop noise if present
+    if 'Noise' in cluster_avg.index:
+        cluster_avg = cluster_avg.drop('Noise')
+
+    # heatmap of disease betas per cluster
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cluster_avg, cmap='coolwarm', annot=True, fmt=".3f", center=0)
+    plt.title(f'Average Disease Beta Values by Cluster – {cfg_id} (min_size={size})')
+    plt.tight_layout()
+    
+    heatmap_path = os.path.join(
+        plots_dir,
+        f'cluster_profile_heatmap_{cfg_id}_min{size}_sil{sil:.2f}.png'
+    )
+
+    plt.savefig(heatmap_path, dpi=300)
+
+    plt.close()
+    print("Saved cluster profile heatmap:", heatmap_path)
+
+    # save cluster assignments (excluding noise)
+    output = df[df['Cluster'] != 'Noise'][['GeneSymbol', 'Cluster']]
+    out_csv = os.path.join(
+        pred_dir,
+        f'protein_clusters_{cfg_id}_min{size}_sil{sil:.2f}.csv'
+    )
+    output.to_csv(out_csv, index=False)
+    print(f"Saved {len(output)} protein cluster assignments to {out_csv}")
 
