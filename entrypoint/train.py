@@ -177,10 +177,17 @@ if __name__ == '__main__':
     eval_model_detailed(model, data, data.val_mask, split_name="Val")
     eval_model_detailed(model, data, data.test_mask, split_name="Test")
 
-    # save the model: per-run file + best_model.pt
+    y = data.y[data.test_mask].cpu().numpy()
+    yhat_zero = np.zeros_like(y)
+
+    for i, name in enumerate(["AD", "PD", "FTD", "ALS"]):
+        mse0 = mean_squared_error(y[:, i], yhat_zero[:, i])
+        r20 = r2_score(y[:, i], yhat_zero[:, i])
+        print(f"Baseline ({name}) – MSE={mse0:.4f}, R²={r20:.4f}")
+
+    # save the model
     best_model_path = os.path.join(models_dir, 'best_model.pt')
     torch.save(best_weights, best_model_path)
     torch.save(best_weights, 'models/best_model.pt')  # for analyze.py
     print("Saved run-specific model to", best_model_path)
     print("Also updated models/best_model.pt for downstream analysis")
-
