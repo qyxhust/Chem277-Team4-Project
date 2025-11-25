@@ -89,11 +89,11 @@ def hp_tuning(data):
     # define parameter space (learning rate, hidden dimensions, dropout rate, attention heads, weight decay)
 
     param_grid = {
-        'learning_rate' : [0.01, 0.005, 0.001], 
-        'hidden_dim' : [64, 128],
-        'dropout_rate' : [0.3, 0.6], 
-        'attention_heads': [4, 8],
-        'weight_decay' : [5e-4, 5e-3]
+        'learning_rate' : [0.001, 0.0005, 0.001, 0.00005, 0.00001], 
+        'hidden_dim' : [32, 64, 128],
+        'dropout_rate' : [0.1, 0.3, 0.5, 0.7], 
+        'attention_heads': [4, 8, 16],
+        'weight_decay' : [1e-4, 5e-4, 1e-3, 5e-3]
         }
 
     best_loss = float('inf') # initialize with value of +infinity
