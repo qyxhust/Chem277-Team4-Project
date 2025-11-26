@@ -1,5 +1,7 @@
 import random
 import numpy as np
+import itertools
+import json
 import torch
 import torch.nn.functional as F
 from sklearn.metrics import r2_score, mean_squared_error
@@ -30,12 +32,12 @@ from src.model import MultiTaskGNN
 
 
 # hyperparameters, we can try different configurations later too
-lr = 0.005
+lr = 5e-4 
 weight_decay = 5e-4
 epochs = 300
 hidden_dim = 64
 num_heads = 8
-dropout = 0.6
+dropout = 0.3
 
 def train_step(model, data, optimizer):
     model.train()
@@ -92,6 +94,109 @@ def eval_model_detailed(model, data, mask, split_name="Test"):
         r2 = r2_score(y[:, i], yhat[:, i])
         print(f"  {name}: MSE={mse:.4f}, R²={r2:.4f}")
 
+def train_one_config(
+    data,
+    in_channels,
+    hidden_dim,
+    out_channels,
+    heads,
+    dropout,
+    lr,
+    weight_decay,
+    epochs,
+    device,
+):
+    
+    ## Train a MultiTaskGNN with a given hyperparameter config
+   
+    model = MultiTaskGNN(
+        in_channels=in_channels,
+        hidden_channels=hidden_dim,
+        out_channels=out_channels,
+        heads=heads,
+        dropout=dropout,
+    ).to(device)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    best_val = float("inf")
+    best_state = None
+
+    for epoch in range(1, epochs + 1):
+        train_loss = train_step(model, data, optimizer)
+        val_loss = eval_model(model, data, data.val_mask)
+
+        if val_loss < best_val:
+            best_val = val_loss
+            best_state = model.state_dict()
+
+    return best_val, best_state
+
+
+def hp_tuning(data, device):
+    
+    ## simple grid search over a small hyperparameter space.
+  
+    param_grid = {
+        "learning_rate": [1e-3, 5e-4],
+        "hidden_dim": [64, 128],
+        "dropout": [0.3, 0.5],
+        "heads": [4, 8],
+        "weight_decay": [1e-4, 5e-4],
+    }
+
+    best_loss = float("inf")
+    best_config = None
+    best_state = None
+
+    in_channels = data.num_node_features
+    out_channels = 4  # AD, PD, FTD, ALS
+
+    # try all combinations
+    for lr, hd, dr, ah, wd in itertools.product(
+        param_grid["learning_rate"],
+        param_grid["hidden_dim"],
+        param_grid["dropout"],
+        param_grid["heads"],
+        param_grid["weight_decay"],
+    ):
+        config = {
+            "lr": lr,
+            "hidden_dim": hd,
+            "dropout": dr,
+            "heads": ah,
+            "weight_decay": wd,
+        }
+        print(f"\nTesting config: {config}")
+
+        val_loss, state_dict = train_one_config(
+            data=data,
+            in_channels=in_channels,
+            hidden_dim=hd,
+            out_channels=out_channels,
+            heads=ah,
+            dropout=dr,
+            lr=lr,
+            weight_decay=wd,
+            epochs=120,          # shorter than 300 to keep tuning manageable
+            device=device,
+        )
+
+        print(f"  → val_loss = {val_loss:.4f}")
+
+        if val_loss < best_loss:
+            best_loss = val_loss
+            best_config = config
+            best_state = state_dict
+            print("  NEW BEST CONFIG!")
+
+    print("\nHyperparameter tuning done.")
+    print(f"Best config: {best_config}")
+    print(f"Best val loss: {best_loss:.4f}")
+
+    return best_config, best_state
+
+
 if __name__ == '__main__':
 
     # check if we have GPU
@@ -103,6 +208,7 @@ if __name__ == '__main__':
     data = data.to(device)
     print(f"Loaded graph with {data.num_nodes} nodes and {data.num_edges} edges")
     
+    # scaling (same as before)
     train_mask = data.train_mask.cpu().numpy().astype(bool)
 
     x_np = data.x.cpu().numpy()
@@ -133,50 +239,32 @@ if __name__ == '__main__':
         y_std=y_std,
     )
 
-    
-    # initialize model
+    # hyperparameter tuning 
+    best_config, best_state = hp_tuning(data, device=device)
+
+    # build final model with best config & load weights
     model = MultiTaskGNN(
         in_channels=data.num_node_features,
-        hidden_channels=hidden_dim,
-        out_channels=4,  # 4 diseases
-        heads=num_heads,
-        dropout=dropout
+        hidden_channels=best_config["hidden_dim"],
+        out_channels=4,
+        heads=best_config["heads"],
+        dropout=best_config["dropout"],
     ).to(device)
+    model.load_state_dict(best_state)
 
-    print(f"\nModel has {sum(p.numel() for p in model.parameters())} parameters")
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-
-    # training loop
-    best_val = float('inf')
-    best_weights = None
-
-
-    for epoch in range(1, epochs + 1):
-        train_loss = train_step(model, data, optimizer)
-        val_loss = eval_model(model, data, data.val_mask)
-
-        # save best model based on validation
-        if val_loss < best_val:
-            best_val = val_loss
-            best_weights = model.state_dict()
-            print(f"Epoch {epoch:03d} | Train: {train_loss:.4f} | Val: {val_loss:.4f} * NEW BEST")
-        else:
-            print(f"Epoch {epoch:03d} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
-
-    # load best model and test
-    model.load_state_dict(best_weights)
+    # evaluate on test set
     test_loss = eval_model(model, data, data.test_mask)
 
-    print(f"\nTraining done!")
-    print(f"Best val loss: {best_val:.4f}")
-    print(f"Test loss: {test_loss:.4f}")
+    print(f"\nTraining done with hyperparameter search!")
+    print(f"Best config: {best_config}")
+    print(f"Test loss (best config): {test_loss:.4f}")
 
-    # detailed test metrics
+    # detailed metrics
     eval_model_detailed(model, data, data.train_mask, split_name="Train")
-    eval_model_detailed(model, data, data.val_mask, split_name="Val")
-    eval_model_detailed(model, data, data.test_mask, split_name="Test")
+    eval_model_detailed(model, data, data.val_mask,   split_name="Val")
+    eval_model_detailed(model, data, data.test_mask,  split_name="Test")
 
+    # baseline zero-prediction comparison 
     y = data.y[data.test_mask].cpu().numpy()
     yhat_zero = np.zeros_like(y)
 
@@ -185,9 +273,23 @@ if __name__ == '__main__':
         r20 = r2_score(y[:, i], yhat_zero[:, i])
         print(f"Baseline ({name}) – MSE={mse0:.4f}, R²={r20:.4f}")
 
-    # save the model
+    # save model + config 
+    # run-specific model path
     best_model_path = os.path.join(models_dir, 'best_model.pt')
-    torch.save(best_weights, best_model_path)
-    torch.save(best_weights, 'models/best_model.pt')  # for analyze.py
+    os.makedirs(models_dir, exist_ok=True)
+    torch.save(best_state, best_model_path)
     print("Saved run-specific model to", best_model_path)
+
+    # keep a copy at fixed location for downstream analysis
+    os.makedirs('models', exist_ok=True)
+    torch.save(best_state, 'models/best_model.pt')
     print("Also updated models/best_model.pt for downstream analysis")
+
+    # save best hyperparameters so analyze.py can reconstruct the same architecture
+    config_run_path = os.path.join(models_dir, 'best_model_config.json')
+    config_root_path = os.path.join('models', 'best_model_config.json')
+    with open(config_run_path, 'w') as f:
+        json.dump(best_config, f, indent=2)
+    with open(config_root_path, 'w') as f:
+        json.dump(best_config, f, indent=2)
+    print("Saved best hyperparameters to", config_root_path)

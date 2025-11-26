@@ -1,6 +1,7 @@
 import random
 import numpy as np
 import torch
+import json
 from datetime import datetime
 
 
@@ -57,18 +58,22 @@ print(f"Device: {device}")
 data = torch.load('data/02-preprocessed/processed_graph.pt')
 data = data.to(device)
 
-# recreate model architecture (needs to match what we trained)
+# load best hyperparameters from training
+with open('models/best_model_config.json', 'r') as f:
+    best_config = json.load(f)
+
 model = MultiTaskGNN(
     in_channels=data.num_node_features,
-    hidden_channels=64,
+    hidden_channels=best_config["hidden_dim"],
     out_channels=4,
-    heads=8,
-    dropout=0.6
+    heads=best_config["heads"],
+    dropout=best_config["dropout"],  
 ).to(device)
 
 model.load_state_dict(torch.load('models/best_model.pt', map_location=device))
 model.eval()
-print("Model loaded")
+print("Model loaded with tuned hyperparameters:", best_config)
+
 
 # get the embeddings from the trained model
 with torch.no_grad():
