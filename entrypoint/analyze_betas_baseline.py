@@ -1,7 +1,6 @@
 import random
 import numpy as np
 import torch
-import json
 from datetime import datetime
 
 random.seed(42)
@@ -16,7 +15,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
-run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+run_id = datetime.now().strftime("baseline_run_%Y%m%d_%H%M%S")
 
 plots_dir = os.path.join("plots", run_id)
 pred_dir  = os.path.join("data", "04-predictions", run_id)
@@ -24,10 +23,9 @@ pred_dir  = os.path.join("data", "04-predictions", run_id)
 os.makedirs(plots_dir, exist_ok=True)
 os.makedirs(pred_dir, exist_ok=True)
 
-print(f"Saving plots to: {plots_dir}")
-print(f"Saving predictions to: {pred_dir}")
+print(f"[BASELINE] Saving plots to: {plots_dir}")
+print(f"[BASELINE] Saving predictions to: {pred_dir}")
 
-from src.model import MultiTaskGNN
 import pandas as pd
 import umap.umap_ as umap
 import hdbscan
@@ -35,39 +33,22 @@ from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-def build_embedding_df(embedding_2d, labels, data):
+def build_embedding_df(embedding_2d, genes):
     df = pd.DataFrame(embedding_2d, columns=['UMAP1', 'UMAP2'])
-    df['GeneSymbol'] = data.gene_symbols
-    df['ClusterLabel'] = labels
-    df['Cluster'] = df['ClusterLabel'].apply(lambda x: f'Cluster {x}' if x != -1 else 'Noise')
+    df['GeneSymbol'] = genes
     return df
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Device: {device}")
+print(f"[BASELINE] Device: {device}")
 
 data = torch.load('data/02-preprocessed/processed_graph.pt')
-data = data.to(device)
+genes = np.array(data.gene_symbols)
 
-with open('models/best_model_config.json', 'r') as f:
-    best_config = json.load(f)
+features = pd.read_csv('data/02-preprocessed/protein_features.csv', index_col='GeneSymbol')
+beta_cols = ['AD_beta', 'PD_beta', 'FTD_beta', 'ALS_beta']
+disease_names = ['AD', 'PD', 'FTD', 'ALS']
 
-model = MultiTaskGNN(
-    in_channels=data.num_node_features,
-    hidden_channels=best_config["hidden_dim"],
-    out_channels=4,
-    heads=best_config["heads"],
-    dropout=best_config["dropout"],
-).to(device)
-
-model.load_state_dict(torch.load('models/best_model.pt', map_location=device))
-model.eval()
-print("Model loaded with tuned hyperparameters:", best_config)
-
-with torch.no_grad():
-    _, _, _, _, embeddings = model(data)
-
-embeddings_np = embeddings.cpu().numpy()
-print(f"Got embeddings shape: {embeddings_np.shape}")
+X = features.loc[genes, beta_cols].values
 
 umap_model = umap.UMAP(
     n_neighbors=20,
@@ -75,9 +56,10 @@ umap_model = umap.UMAP(
     n_components=2,
     random_state=42
 )
-embedding_2d = umap_model.fit_transform(embeddings_np)
+embedding_2d = umap_model.fit_transform(X)
+print(f"[BASELINE] Got embedding shape (no graph): {embedding_2d.shape}")
 
-print("\nTrying different clustering parameters")
+print("\n[BASELINE] Trying different clustering parameters")
 
 sizes_to_try = [5, 10, 15, 20, 25, 35, 50]
 
@@ -94,12 +76,12 @@ for idx, size in enumerate(sizes_to_try):
     n_clusters = len(np.unique(labels[labels != -1]))
 
     if n_clusters == 0:
-        print(f"  size={size:3d}: no clusters (all noise), skipping")
+        print(f"  [BASELINE] size={size:3d}: no clusters (all noise), skipping")
         continue
 
     if not (min_clusters <= n_clusters <= max_clusters):
         print(
-            f"  size={size:3d}: {n_clusters} clusters, "
+            f"  [BASELINE] size={size:3d}: {n_clusters} clusters, "
             f"outside [{min_clusters}, {max_clusters}], skipping"
         )
         continue
@@ -108,7 +90,7 @@ for idx, size in enumerate(sizes_to_try):
     score = silhouette_score(embedding_2d[mask], labels[mask])
 
     config_id = f"min{size}_cfg{idx}"
-    print(f"  size={size:3d}: {n_clusters:2d} clusters, silhouette={score:.4f} (id={config_id})")
+    print(f"  [BASELINE] size={size:3d}: {n_clusters:2d} clusters, silhouette={score:.4f} (id={config_id})")
 
     results.append({
         "config_id": config_id,
@@ -119,27 +101,23 @@ for idx, size in enumerate(sizes_to_try):
     labels_dict[config_id] = labels
 
 results_df = pd.DataFrame(results).sort_values("silhouette", ascending=False)
-print("\nAll HDBSCAN configs sorted by silhouette:")
+print("\n[BASELINE] All HDBSCAN configs sorted by silhouette:")
 print(results_df)
 
 if results_df.empty:
-    print("No valid HDBSCAN configs in the desired cluster range, stopping.")
+    print("[BASELINE] No valid HDBSCAN configs in the desired cluster range, stopping.")
     raise SystemExit
 
 plt.figure()
 sns.barplot(data=results_df, x="min_cluster_size", y="silhouette")
 plt.xlabel("HDBSCAN min_cluster_size")
 plt.ylabel("Silhouette score")
-plt.title("Clustering quality across HDBSCAN configs")
+plt.title("[BASELINE] Clustering quality across HDBSCAN configs")
 plt.tight_layout()
-summary_path = os.path.join(plots_dir, "hdbscan_silhouette_by_min_cluster_size.png")
+summary_path = os.path.join(plots_dir, "baseline_hdbscan_silhouette_by_min_cluster_size.png")
 plt.savefig(summary_path, dpi=300)
 plt.close()
-print("Saved silhouette summary plot to", summary_path)
-
-features = pd.read_csv('data/02-preprocessed/protein_features.csv', index_col='GeneSymbol')
-beta_cols = ['AD_beta', 'PD_beta', 'FTD_beta', 'ALS_beta']
-disease_names = ['AD', 'PD', 'FTD', 'ALS']
+print("[BASELINE] Saved silhouette summary plot to", summary_path)
 
 def dominant_disease(row, min_beta=0.1, min_margin=0.1):
     vals = row[beta_cols].values
@@ -157,7 +135,7 @@ def dominant_disease(row, min_beta=0.1, min_margin=0.1):
     return disease_names[max_idx]
 
 top_k = min(30, len(results_df))
-print(f"\nGenerating detailed outputs for top {top_k} HDBSCAN configs")
+print(f"\n[BASELINE] Generating detailed outputs for top {top_k} HDBSCAN configs")
 
 for _, row in results_df.head(top_k).iterrows():
     cfg_id = row["config_id"]
@@ -165,9 +143,11 @@ for _, row in results_df.head(top_k).iterrows():
     sil = row["silhouette"]
     labels = labels_dict[cfg_id]
 
-    print(f"\nConfig {cfg_id} (min_cluster_size={size}, silhouette={sil:.3f})")
+    print(f"\n[BASELINE] Config {cfg_id} (min_cluster_size={size}, silhouette={sil:.3f})")
 
-    df = build_embedding_df(embedding_2d, labels, data)
+    df = build_embedding_df(embedding_2d, genes)
+    df['ClusterLabel'] = labels
+    df['Cluster'] = df['ClusterLabel'].apply(lambda x: f'Cluster {x}' if x != -1 else 'Noise')
 
     n_real_clusters = len(df[df['Cluster'] != 'Noise']['Cluster'].unique())
     n_noise = (df['Cluster'] == 'Noise').sum()
@@ -175,7 +155,7 @@ for _, row in results_df.head(top_k).iterrows():
     n_clustered = n_total - n_noise
 
     print(
-        f"Total proteins: {n_total}, "
+        f"[BASELINE] Total proteins: {n_total}, "
         f"Clustered (non-noise): {n_clustered}, "
         "Noise: {0}, n_real_clusters={1}".format(n_noise, n_real_clusters)
     )
@@ -193,20 +173,20 @@ for _, row in results_df.head(top_k).iterrows():
             alpha=0.7,
             s=15
         )
-        plt.title(f'Protein Embeddings UMAP – {cfg_id} (min_size={size}, sil={sil:.2f})')
+        plt.title(f'[BASELINE] Protein Betas UMAP – {cfg_id} (min_size={size}, sil={sil:.2f})')
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         plt.tight_layout()
 
         umap_path = os.path.join(
             plots_dir,
-            f'protein_embeddings_umap_{cfg_id}_min{size}_sil{sil:.2f}.png'
+            f'baseline_protein_betas_umap_{cfg_id}_min{size}_sil{sil:.2f}.png'
         )
 
         plt.savefig(umap_path, dpi=300)
         plt.close()
-        print("Saved UMAP plot:", umap_path)
+        print("[BASELINE] Saved UMAP plot:", umap_path)
     else:
-        print("No real clusters (all noise), skipping UMAP plot.")
+        print("[BASELINE] No real clusters (all noise), skipping UMAP plot.")
 
     merged = features.join(df.set_index('GeneSymbol')['Cluster'])
     cluster_avg = merged.groupby('Cluster')[beta_cols].mean()
@@ -225,51 +205,51 @@ for _, row in results_df.head(top_k).iterrows():
 
     plt.figure(figsize=(8, 6))
     sns.heatmap(cluster_summary_no_noise[beta_cols], cmap='coolwarm', annot=True, fmt=".3f", center=0)
-    plt.title(f'Average Disease Beta Values by Cluster – {cfg_id} (min_size={size})')
+    plt.title(f'[BASELINE] Avg Disease Betas by Cluster – {cfg_id} (min_size={size})')
     plt.tight_layout()
     
     heatmap_path = os.path.join(
         plots_dir,
-        f'cluster_profile_heatmap_{cfg_id}_min{size}_sil{sil:.2f}.png'
+        f'baseline_cluster_profile_heatmap_{cfg_id}_min{size}_sil{sil:.2f}.png'
     )
 
     plt.savefig(heatmap_path, dpi=300)
     plt.close()
-    print("Saved cluster profile heatmap:", heatmap_path)
+    print("[BASELINE] Saved cluster profile heatmap:", heatmap_path)
 
     summary_path = os.path.join(
         pred_dir,
-        f'cluster_summary_{cfg_id}_min{size}_sil{sil:.2f}.csv'
+        f'baseline_cluster_summary_{cfg_id}_min{size}_sil{sil:.2f}.csv'
     )
     cluster_summary_no_noise.to_csv(summary_path)
-    print("Saved cluster summary to", summary_path)
+    print("[BASELINE] Saved cluster summary to", summary_path)
 
     output = df[df['Cluster'] != 'Noise'][['GeneSymbol', 'Cluster']]
     out_csv = os.path.join(
         pred_dir,
-        f'protein_clusters_{cfg_id}_min{size}_sil{sil:.2f}.csv'
+        f'baseline_protein_clusters_{cfg_id}_min{size}_sil{sil:.2f}.csv'
     )
     output.to_csv(out_csv, index=False)
-    print(f"Saved {len(output)} protein cluster assignments to {out_csv}")
+    print(f"[BASELINE] Saved {len(output)} protein cluster assignments to {out_csv}")
 
     metascape_dir = os.path.join(
         pred_dir,
-        f'metascape_lists_{cfg_id}_min{size}_sil{sil:.2f}'
+        f'baseline_metascape_lists_{cfg_id}_min{size}_sil{sil:.2f}'
     )
     os.makedirs(metascape_dir, exist_ok=True)
 
     for cluster_name, group in df_clustered.groupby('Cluster'):
-        genes = group['GeneSymbol'].dropna().unique()
-        genes = [g for g in genes if isinstance(g, str) and g.strip() != ""]
+        genes_cluster = group['GeneSymbol'].dropna().unique()
+        genes_cluster = [g for g in genes_cluster if isinstance(g, str) and g.strip() != ""]
 
-        if len(genes) == 0:
+        if len(genes_cluster) == 0:
             continue
 
         txt_path = os.path.join(
             metascape_dir,
-            f'{cfg_id}_{cluster_name}_genes.txt'
+            f'baseline_{cfg_id}_{cluster_name}_genes.txt'
         )
         with open(txt_path, 'w') as f:
-            f.write("\n".join(genes))
+            f.write("\n".join(genes_cluster))
 
-        print(f"Saved {len(genes)} genes for {cluster_name} to {txt_path}")
+        print(f"[BASELINE] Saved {len(genes_cluster)} genes for {cluster_name} to {txt_path}")

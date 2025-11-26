@@ -31,14 +31,6 @@ print(f"Saving models to: {models_dir}")
 from src.model import MultiTaskGNN
 
 
-# hyperparameters, we can try different configurations later too
-lr = 5e-4 
-weight_decay = 5e-4
-epochs = 300
-hidden_dim = 64
-num_heads = 8
-dropout = 0.3
-
 def train_step(model, data, optimizer):
     model.train()
     optimizer.zero_grad()
@@ -178,7 +170,7 @@ def hp_tuning(data, device):
             dropout=dr,
             lr=lr,
             weight_decay=wd,
-            epochs=120,          # shorter than 300 to keep tuning manageable
+            epochs=120,         
             device=device,
         )
 
@@ -196,7 +188,6 @@ def hp_tuning(data, device):
 
     return best_config, best_state
 
-
 if __name__ == '__main__':
 
     # check if we have GPU
@@ -208,7 +199,7 @@ if __name__ == '__main__':
     data = data.to(device)
     print(f"Loaded graph with {data.num_nodes} nodes and {data.num_edges} edges")
     
-    # scaling (same as before)
+    # scaling 
     train_mask = data.train_mask.cpu().numpy().astype(bool)
 
     x_np = data.x.cpu().numpy()
@@ -239,10 +230,18 @@ if __name__ == '__main__':
         y_std=y_std,
     )
 
-    # hyperparameter tuning 
-    best_config, best_state = hp_tuning(data, device=device)
+    ## Final Training 
 
-    # build final model with best config & load weights
+    best_config = {
+        "lr": 0.001,
+        "hidden_dim": 128,
+        "dropout": 0.3,
+        "heads": 8,
+        "weight_decay": 1e-4,
+    }
+
+    max_epochs = 300
+
     model = MultiTaskGNN(
         in_channels=data.num_node_features,
         hidden_channels=best_config["hidden_dim"],
@@ -250,21 +249,44 @@ if __name__ == '__main__':
         heads=best_config["heads"],
         dropout=best_config["dropout"],
     ).to(device)
-    model.load_state_dict(best_state)
 
-    # evaluate on test set
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=best_config["lr"],
+        weight_decay=best_config["weight_decay"],
+    )
+
+    best_val = float("inf")
+    best_state = None
+
+    for epoch in range(1, max_epochs + 1):
+        train_loss = train_step(model, data, optimizer)
+        val_loss   = eval_model(model, data, data.val_mask)
+
+        if val_loss < best_val - 1e-4:
+            best_val = val_loss
+            best_state = model.state_dict()
+            tag = "* New best"
+        else:
+            tag = ""
+
+        print(f"Epoch {epoch:03d} | Train: {train_loss:.4f} | Val: {val_loss:.4f} {tag}")
+
+    # after training loop: load best weights, evaluate, save 
+    model.load_state_dict(best_state)
     test_loss = eval_model(model, data, data.test_mask)
 
-    print(f"\nTraining done with hyperparameter search!")
+    print(f"\nFinal 300-epoch run done!")
     print(f"Best config: {best_config}")
-    print(f"Test loss (best config): {test_loss:.4f}")
+    print(f"Best val loss: {best_val:.4f}")
+    print(f"Test loss: {test_loss:.4f}")
 
     # detailed metrics
     eval_model_detailed(model, data, data.train_mask, split_name="Train")
     eval_model_detailed(model, data, data.val_mask,   split_name="Val")
     eval_model_detailed(model, data, data.test_mask,  split_name="Test")
 
-    # baseline zero-prediction comparison 
+    # baseline zero-prediction comparison
     y = data.y[data.test_mask].cpu().numpy()
     yhat_zero = np.zeros_like(y)
 
@@ -273,14 +295,12 @@ if __name__ == '__main__':
         r20 = r2_score(y[:, i], yhat_zero[:, i])
         print(f"Baseline ({name}) – MSE={mse0:.4f}, R²={r20:.4f}")
 
-    # save model + config 
-    # run-specific model path
-    best_model_path = os.path.join(models_dir, 'best_model.pt')
+    # save model + config
     os.makedirs(models_dir, exist_ok=True)
+    best_model_path = os.path.join(models_dir, 'best_model.pt')
     torch.save(best_state, best_model_path)
     print("Saved run-specific model to", best_model_path)
 
-    # keep a copy at fixed location for downstream analysis
     os.makedirs('models', exist_ok=True)
     torch.save(best_state, 'models/best_model.pt')
     print("Also updated models/best_model.pt for downstream analysis")
