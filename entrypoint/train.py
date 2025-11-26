@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from sklearn.metrics import r2_score, mean_squared_error
 from datetime import datetime
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 random.seed(42)
 np.random.seed(42)
@@ -28,42 +29,73 @@ print(f"Saving models to: {models_dir}")
 
 from src.model import MultiTaskGNN
 
+def apply_mask(data, mask_rate):
+    """Applies a mask to the data."""
+    num_nodes, num_features = data.size()
+    mask = torch.rand(num_nodes, num_features,device=data.device) < mask_rate
+
+    x_masked = data.clone()
+    x_masked[mask] = 0
+
+    return x_masked, mask
 
 # hyperparameters, we can try different configurations later too
-lr = 0.005
+lr = 0.005 # Slightly lower LR for deeper model
 weight_decay = 5e-4
-epochs = 300
-hidden_dim = 64
+epochs = 400 
+hidden_dim = 128
 num_heads = 8
 dropout = 0.6
+MASK_RATE = 0.15 
+RECON_WEIGHT = 0.5 
+NUM_LAYERS = 3 # New hyperparameter
 
 def train_step(model, data, optimizer):
+    """Performs a single training step."""
     model.train()
     optimizer.zero_grad()
+    
+    original_x = data.x.clone()
+    # all nodes are masked and take part in the training
+    x_masked, mask_matrix = apply_mask(data.x, MASK_RATE)
+    
+    # construct the batch
+    data.x= x_masked
 
-    pred_ad, pred_pd, pred_ftd, pred_als, _ = model(data)
+    pred_ad, pred_pd, pred_ftd, pred_als, _, reconstructed_x = model(data)
 
+    # --- LOSS 1: Supervised Regression ---
     # only use training nodes for loss
     mask = data.train_mask
-
-    # calculate MSE for each disease
     loss_ad = F.mse_loss(pred_ad[mask], data.y[mask, 0].unsqueeze(1))
     loss_pd = F.mse_loss(pred_pd[mask], data.y[mask, 1].unsqueeze(1))
     loss_ftd = F.mse_loss(pred_ftd[mask], data.y[mask, 2].unsqueeze(1))
     loss_als = F.mse_loss(pred_als[mask], data.y[mask, 3].unsqueeze(1))
+    
+    loss_supervised = loss_ad + loss_pd + loss_ftd + loss_als
 
-    # sum them up
-    loss = loss_ad + loss_pd + loss_ftd + loss_als
+    # --- LOSS 2: Self-Supervised Reconstruction ---
+    # We calculate loss ONLY on the masked values (like BERT)
+    # This forces the model to use context to fill in the blanks
+    if mask_matrix.any():
+        loss_recon = F.mse_loss(reconstructed_x[mask_matrix], original_x[mask_matrix])
+    else:
+        loss_recon = 0.0
+
+    # Total Loss
+    loss = loss_supervised + (RECON_WEIGHT * loss_recon)
 
     loss.backward()
     optimizer.step()
 
-    return loss.item()
+    data.x = original_x
+
+    return loss.item(), loss_supervised.item(), loss_recon.item() if isinstance(loss_recon, torch.Tensor) else 0.0
 
 def eval_model(model, data, mask):
     model.eval()
     with torch.no_grad():
-        pred_ad, pred_pd, pred_ftd, pred_als, _ = model(data)
+        pred_ad, pred_pd, pred_ftd, pred_als, _, reconstructed_x = model(data)
 
         # same as training but on val/test set
         loss_ad = F.mse_loss(pred_ad[mask], data.y[mask, 0].unsqueeze(1))
@@ -79,7 +111,7 @@ def eval_model(model, data, mask):
 def eval_model_detailed(model, data, mask, split_name="Test"):
     model.eval()
     with torch.no_grad():
-        pred_ad, pred_pd, pred_ftd, pred_als, _ = model(data)
+        pred_ad, pred_pd, pred_ftd, pred_als, _, _ = model(data)
         preds = torch.cat([pred_ad, pred_pd, pred_ftd, pred_als], dim=1)
 
     y = data.y[mask].cpu().numpy()
@@ -140,12 +172,16 @@ if __name__ == '__main__':
         hidden_channels=hidden_dim,
         out_channels=4,  # 4 diseases
         heads=num_heads,
-        dropout=dropout
+        dropout=dropout,
+        num_layers=NUM_LAYERS
     ).to(device)
 
     print(f"\nModel has {sum(p.numel() for p in model.parameters())} parameters")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    
+    # NEW: Learning Rate Scheduler
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, verbose=True)
 
     # training loop
     best_val = float('inf')
@@ -153,16 +189,20 @@ if __name__ == '__main__':
 
 
     for epoch in range(1, epochs + 1):
-        train_loss = train_step(model, data, optimizer)
+        total_loss, sup_loss, recon_loss = train_step(model, data, optimizer)
         val_loss = eval_model(model, data, data.val_mask)
+        
+        # Update scheduler
+        scheduler.step(val_loss)
 
         # save best model based on validation
         if val_loss < best_val:
             best_val = val_loss
             best_weights = model.state_dict()
-            print(f"Epoch {epoch:03d} | Train: {train_loss:.4f} | Val: {val_loss:.4f} * NEW BEST")
+            print(f"Epoch {epoch:03d} | Loss: {total_loss:.4f} (Sup: {sup_loss:.4f}, Recon: {recon_loss:.4f}) | Val: {val_loss:.4f} * NEW BEST")
         else:
-            print(f"Epoch {epoch:03d} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+            if epoch % 10 == 0: # Reduce log verbosity
+                print(f"Epoch {epoch:03d} | Loss: {total_loss:.4f} (Sup: {sup_loss:.4f}, Recon: {recon_loss:.4f}) | Val: {val_loss:.4f}")
 
     # load best model and test
     model.load_state_dict(best_weights)

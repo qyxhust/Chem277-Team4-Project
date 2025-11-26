@@ -58,12 +58,14 @@ data = torch.load('data/02-preprocessed/processed_graph.pt')
 data = data.to(device)
 
 # recreate model architecture (needs to match what we trained)
+# Updated to match the Deep Residual GAT architecture
 model = MultiTaskGNN(
     in_channels=data.num_node_features,
-    hidden_channels=64,
+    hidden_channels=128, # Updated from 64
     out_channels=4,
     heads=8,
-    dropout=0.6
+    dropout=0.6,
+    num_layers=3         # New parameter
 ).to(device)
 
 model.load_state_dict(torch.load('models/best_model.pt', map_location=device))
@@ -72,7 +74,8 @@ print("Model loaded")
 
 # get the embeddings from the trained model
 with torch.no_grad():
-    _, _, _, _, embeddings = model(data)
+    # Updated to unpack 6 values (added _ for reconstruction output)
+    _, _, _, _, embeddings, _ = model(data)
 
 embeddings_np = embeddings.cpu().numpy()
 print(f"Got embeddings shape: {embeddings_np.shape}")
