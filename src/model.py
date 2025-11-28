@@ -10,41 +10,49 @@ class MultiTaskGNN(torch.nn.Module):
 
         self.dropout = dropout
 
-        # first GAT layer, using multi-head attention
-        # heads parameter lets us use multiple attention mechanisms
-        self.conv1 = GATv2Conv(in_channels, hidden_channels, heads=heads, dropout=dropout)
+        # edge_dim=1 because edge_attr has shape [num_edges, 1] (STRING weight)
+        self.conv1 = GATv2Conv(
+            in_channels,
+            hidden_channels,
+            heads=heads,
+            dropout=dropout,
+            edge_dim=1
+        )
 
-        # second layer, input size needs to be hidden*heads because of concat
-    
-        self.conv2 = GATv2Conv(hidden_channels * heads, hidden_channels, heads=1, dropout=dropout)
+        self.conv2 = GATv2Conv(
+            hidden_channels * heads,
+            hidden_channels,
+            heads=1,
+            dropout=dropout,
+            edge_dim=1
+        )
 
-        # separate output layer for each disease
-       
-        self.out_ad = nn.Linear(hidden_channels, 1)
-        self.out_pd = nn.Linear(hidden_channels, 1)
+        # one regression head per disease
+        self.out_ad  = nn.Linear(hidden_channels, 1)
+        self.out_pd  = nn.Linear(hidden_channels, 1)
         self.out_ftd = nn.Linear(hidden_channels, 1)
         self.out_als = nn.Linear(hidden_channels, 1)
 
     def forward(self, data):
-        x, edge_index = data.x, data.edge_index
+        x, edge_index, edge_attr = data.x, data.edge_index, data.edge_attr
 
-        # dropout on input
+        # dropout on node features
         x = F.dropout(x, p=self.dropout, training=self.training)
 
-        # first GAT layer + activation
-        x = self.conv1(x, edge_index)
-        x = F.elu(x)  
+        # first GAT layer with edge weights
+        x = self.conv1(x, edge_index, edge_attr=edge_attr)
+        x = F.elu(x)
 
         x = F.dropout(x, p=self.dropout, training=self.training)
 
-        # second layer gives us the embeddings we'll use
-        shared_embeddings = self.conv2(x, edge_index)
+        # second GAT layer (these embeddings are what we'll cluster)
+        shared_embeddings = self.conv2(x, edge_index, edge_attr=edge_attr)
 
-        # get predictions for each disease from the shared embeddings
-        pred_ad = self.out_ad(shared_embeddings)
-        pred_pd = self.out_pd(shared_embeddings)
+        # disease-specific predictions
+        pred_ad  = self.out_ad(shared_embeddings)
+        pred_pd  = self.out_pd(shared_embeddings)
         pred_ftd = self.out_ftd(shared_embeddings)
         pred_als = self.out_als(shared_embeddings)
 
-        # return all predictions plus embeddings (need embeddings for clustering later)
+        # embeddings go to UMAP + HDBSCAN for module discovery
         return pred_ad, pred_pd, pred_ftd, pred_als, shared_embeddings
