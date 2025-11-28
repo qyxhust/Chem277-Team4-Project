@@ -51,6 +51,22 @@ data = data.to(device)
 with open('models/best_model_config.json', 'r') as f:
     best_config = json.load(f)
 
+# Apply the same scaling as in training (for X only)
+
+scalers_path = 'data/02-preprocessed/gat_scalers_train_based.npz'
+scalers = np.load(scalers_path)
+
+x_mean = scalers['x_mean']
+x_std  = scalers['x_std']
+
+x_np = data.x.cpu().numpy()
+x_scaled = (x_np - x_mean) / x_std
+data.x = torch.from_numpy(x_scaled).to(device)
+
+## We don't need to scale the data.y in here because we are only using the get embeddings and it uses the protein_features.csv betas for cluster summaries
+print("Applied train-based scaling to node features (X)")
+
+
 model = MultiTaskGNN(
     in_channels=data.num_node_features,
     hidden_channels=best_config["hidden_dim"],
@@ -77,15 +93,24 @@ umap_model = umap.UMAP(
 )
 embedding_2d = umap_model.fit_transform(embeddings_np)
 
+umap_coords_path = os.path.join(pred_dir, "protein_embeddings_umap_coords.csv")
+pd.DataFrame(embedding_2d, columns=["UMAP1", "UMAP2"]).assign(
+    GeneSymbol=data.gene_symbols
+).to_csv(umap_coords_path, index=False)
+print("Saved 2D UMAP coordinates to", umap_coords_path)
+
+
 print("\nTrying different clustering parameters")
 
-sizes_to_try = [5, 10, 15, 20, 25, 35, 50]
+sizes_to_try = [5, 10, 15, 20, 25, 30, 35, 40, 50]
 
-min_clusters = 4
-max_clusters = 25
+min_clusters = 2
+max_clusters = 60
 
 results = []
 labels_dict = {}
+
+## Note: Use silhouette_score only to compare HDBSCAN configs, final biological interpretation will rely on disease beta profiles, and pathway enrichmen analysis not only silhoutte score alone
 
 for idx, size in enumerate(sizes_to_try):
     clusterer = hdbscan.HDBSCAN(min_cluster_size=size)
@@ -125,6 +150,15 @@ print(results_df)
 if results_df.empty:
     print("No valid HDBSCAN configs in the desired cluster range, stopping.")
     raise SystemExit
+
+best_row = results_df.iloc[0]
+print(
+    f"\nUsing primary config for interpretation: "
+    f"{best_row['config_id']} "
+    f"(min_cluster_size={int(best_row['min_cluster_size'])}, "
+    f"n_clusters={int(best_row['n_clusters'])}, "
+    f"silhouette={best_row['silhouette']:.4f})"
+)
 
 plt.figure()
 sns.barplot(data=results_df, x="min_cluster_size", y="silhouette")
