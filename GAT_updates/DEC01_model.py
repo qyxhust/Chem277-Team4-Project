@@ -41,14 +41,15 @@ class MultiTaskGNN(torch.nn.Module):
 
         # first GAT layer with edge weights
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
-        x = F.elu(x)
+        x = F.elu(x) #, negative_slope=0.2
 
         x = F.dropout(x, p=self.dropout, training=self.training)
 
         # second GAT layer (these embeddings are what we'll cluster)
         shared_embeddings = self.conv2(x, edge_index, edge_attr=edge_attr)
+        shared_embeddings = F.elu(shared_embeddings) #, negative_slope=0.2
 
-        # disease-specific predictions
+        # disease-specific predictions with tanh to constrain output to [-1, 1]
         pred_ad  = self.out_ad(shared_embeddings)
         pred_pd  = self.out_pd(shared_embeddings)
         pred_ftd = self.out_ftd(shared_embeddings)

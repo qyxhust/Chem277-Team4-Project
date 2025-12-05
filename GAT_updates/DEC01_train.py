@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from sklearn.metrics import r2_score, mean_squared_error
 from datetime import datetime
 import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
 
 random.seed(42)
 np.random.seed(42)
@@ -71,7 +73,7 @@ def eval_model(model, data, mask):
     return total_loss.item()
 
 ## added a detailed evaluation function to get per-disease metrics
-def eval_model_detailed(model, data, mask, split_name="Test"):
+def eval_model_detailed(model, data, mask, y_mean, y_std, split_name="Test"):
     model.eval()
     with torch.no_grad():
         pred_ad, pred_pd, pred_ftd, pred_als, _ = model(data)
@@ -80,11 +82,14 @@ def eval_model_detailed(model, data, mask, split_name="Test"):
     y = data.y[mask].cpu().numpy()
     yhat = preds[mask].cpu().numpy()
 
+    y_orig = (y * y_std[None, :]) + y_mean[None, :] # broadcasting needed so that inverse transformation is correct
+    yhat_orig = (yhat * y_std[None, :]) + y_mean[None, :]
+
     diseases = ["AD", "PD", "FTD", "ALS"]
-    print(f"\n{split_name} metrics (scaled space):")
+    print(f"\n{split_name} metrics (original space):")
     for i, name in enumerate(diseases):
-        mse = mean_squared_error(y[:, i], yhat[:, i])
-        r2 = r2_score(y[:, i], yhat[:, i])
+        mse = mean_squared_error(y_orig[:, i], yhat_orig[:, i])
+        r2 = r2_score(y_orig[:, i], yhat_orig[:, i])
         print(f"  {name}: MSE={mse:.4f}, R²={r2:.4f}")
 
 def train_one_config(
@@ -207,9 +212,11 @@ def plot(t_losses, v_losses, epochs):
     plt.plot(epochs, t_losses, label = 'Training MSE')
     plt.plot(epochs, v_losses, label = 'Validation MSE')
 
-    plt.title("Loss Over Epochs for Multi-task GAT")
-    plt.xlabel("Epoch")
-    plt.ylabel("Log Total MSE")
+    plt.title("Loss Over Epochs for Multi-task GAT", fontsize=18)
+    plt.xlabel("Epoch", fontsize=16)
+    plt.ylabel("Log Total MSE", fontsize=16)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
     plt.yscale("log")
     plt.legend()
     plt.savefig("loss_over_epochs")
@@ -242,6 +249,8 @@ if __name__ == '__main__':
     y_std  = y_np[train_mask].std(axis=0)
     y_std[y_std == 0] = 1.0
     y_scaled = (y_np - y_mean) / y_std
+
+    print(x_std, y_std)
 
     data.x = torch.from_numpy(x_scaled).to(device)
     data.y = torch.from_numpy(y_scaled).to(device)
@@ -319,17 +328,19 @@ if __name__ == '__main__':
     print(f"Test loss: {test_loss:.4f}")
 
     # detailed metrics
-    eval_model_detailed(model, data, data.train_mask, split_name="Train")
-    eval_model_detailed(model, data, data.val_mask,   split_name="Val")
-    eval_model_detailed(model, data, data.test_mask,  split_name="Test")
+    eval_model_detailed(model, data, data.train_mask, y_mean=y_mean, y_std=y_std, split_name="Train")
+    eval_model_detailed(model, data, data.val_mask, y_mean=y_mean, y_std=y_std, split_name="Val")
+    eval_model_detailed(model, data, data.test_mask, y_mean=y_mean, y_std=y_std, split_name="Test")
 
     # baseline zero-prediction comparison
-    y = data.y[data.test_mask].cpu().numpy()
-    yhat_zero = np.zeros_like(y)
+    y_scaled_test = data.y[data.test_mask].cpu().numpy()
+    y_orig = (y_scaled_test * y_std[None, :]) + y_mean[None, :] # broadcasting y_mean and y_std
+    yhat_zero_scaled = np.zeros_like(y_orig)
+    yhat_zero_orig = (yhat_zero_scaled * y_std[None, :]) + y_mean[None, :]
 
     for i, name in enumerate(["AD", "PD", "FTD", "ALS"]):
-        mse0 = mean_squared_error(y[:, i], yhat_zero[:, i])
-        r20 = r2_score(y[:, i], yhat_zero[:, i])
+        mse0 = mean_squared_error(y_orig[:, i], yhat_zero_orig[:, i])
+        r20 = r2_score(y_orig[:, i], yhat_zero_orig[:, i])
         print(f"Baseline ({name}) – MSE={mse0:.4f}, R²={r20:.4f}")
 
     # save model + config
@@ -350,3 +361,163 @@ if __name__ == '__main__':
     with open(config_root_path, 'w') as f:
         json.dump(best_config, f, indent=2)
     print("Saved best hyperparameters to", config_root_path)
+
+    # plot metrics for each split
+    diseases = ['AD', 'PD', 'FTD', 'ALS']
+
+    # Train metrics (original space):
+    # AD: MSE=0.0022, R²=0.2787
+    # PD: MSE=0.0009, R²=0.3068
+    # FTD: MSE=0.0014, R²=0.1625
+    # ALS: MSE=0.0046, R²=0.0682
+
+    best_train = {'MSE_ad': 0.0022, 'R2_ad': 0.2787, 
+                  'MSE_pd': 0.0009, 'R2_pd': 0.3068, 
+                  'MSE_ftd': 0.0014, 'R2_ftd': 0.1625, 
+                  'MSE_als': 0.0046, 'R2_als': 0.0682}
+
+    # Val metrics (original space):
+    # AD: MSE=0.0022, R²=0.2471
+    # PD: MSE=0.0010, R²=0.2840
+    # FTD: MSE=0.0012, R²=0.1413
+    # ALS: MSE=0.0043, R²=0.0261
+    best_val = {'MSE_ad': 0.0022, 'R2_ad': 0.2840, 
+                'MSE_pd': 0.0010, 'R2_pd': 0.2089, 
+                'MSE_ftd': 0.0012, 'R2_ftd': 0.1413, 
+                'MSE_als': 0.0043, 'R2_als': 0.0261}
+
+
+    # Test metrics (original space):
+    # AD: MSE=0.0023, R²=0.2704
+    # PD: MSE=0.0009, R²=0.2911
+    # FTD: MSE=0.0014, R²=0.1434
+    # ALS: MSE=0.0039, R²=0.0383
+    best_test = {'MSE_ad': 0.0023, 'R2_ad': 0.2704, 
+                'MSE_pd': 0.0009, 'R2_pd': 0.2911, 
+                'MSE_ftd': 0.0014, 'R2_ftd': 0.1434, 
+                'MSE_als': 0.0039, 'R2_als': 0.0383}
+    
+    # put MSE values for all splits in a dict
+    all_mse = {
+        'Training': [best_train[f'MSE_{d.lower()}'] for d in diseases],
+        'Validation': [best_val[f'MSE_{d.lower()}'] for d in diseases],
+        'Testing': [best_test[f'MSE_{d.lower()}'] for d in diseases]
+    }
+
+    mse_df = pd.DataFrame(all_mse, index=diseases)
+    mse_df.index.name = 'disease'
+
+    # melt df to get disease, splits, and mse columns
+    mse_melted = mse_df.reset_index().melt(
+        id_vars='disease', 
+        var_name='split', 
+        value_name='MSE'
+    )
+
+    # plotting MSE
+    plt.figure(figsize=(10,6))
+    sns.barplot(x='disease', y='MSE', hue='split', data=mse_melted, palette='viridis')
+    plt.ylabel('MSE Value', fontsize=16)
+    plt.xlabel('Disease', fontsize=16)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.title('MSE for Each Split', fontsize=18)
+    plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0), fontsize=14)
+    plt.ylim(0, 0.005)
+    plt.tight_layout()
+    plt.savefig("GAT_MSE.png")
+
+    # plotting R^2
+    # put R^2 values for all splits in a dict
+    all_r2 = {
+        'Training': [best_train[f'R2_{d.lower()}'] for d in diseases],
+        'Validation': [best_val[f'R2_{d.lower()}'] for d in diseases],
+        'Testing': [best_test[f'R2_{d.lower()}'] for d in diseases]
+    }
+
+    r2_df = pd.DataFrame(all_r2, index=diseases)
+    r2_df.index.name = 'disease'
+
+    # melt df to get disease, splits, and r2 columns
+    r2_melted = r2_df.reset_index().melt(
+        id_vars='disease', 
+        var_name='split', 
+        value_name='R2'
+    )
+
+    # plotting R^2
+    plt.figure(figsize=(10,6))
+    sns.barplot(x='disease', y='R2', hue='split', data=r2_melted, palette='viridis')
+    plt.ylabel('$R^2$', fontsize=16)
+    plt.xlabel('Disease', fontsize=16)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.title('$R^2$ for Each Split', fontsize=18)
+    plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0), fontsize=14)
+    plt.ylim(0, 0.35)
+    plt.tight_layout()
+    plt.savefig("GAT_R2.png")
+
+
+    # plotting for baseline
+    # Baseline (AD) – MSE=0.0032, R²=-0.0009
+    # Baseline (PD) – MSE=0.0012, R²=-0.0001
+    # Baseline (FTD) – MSE=0.0016, R²=-0.0003
+    # Baseline (ALS) – MSE=0.0040, R²=-0.0000
+    baseline = {'MSE_ad': 0.0032, 'R2_ad': -0.0009, 
+                'MSE_pd': 0.0012, 'R2_pd': -0.0001, 
+                'MSE_ftd': 0.0016, 'R2_ftd': -0.0003, 
+                'MSE_als': 0.0040, 'R2_als': -0.0000}
+    
+    # all metrics to turn into df
+    all_bl_metrics = {'Disease' : diseases,
+        'MSE': [baseline[f'MSE_{d.lower()}'] for d in diseases],
+        'R2' : [baseline[f'R2_{d.lower()}'] for d in diseases]
+        }
+
+    all_bl_df = pd.DataFrame(all_bl_metrics)
+  
+
+    # melt df to get just MSE
+    mse_melted_bl = all_bl_df.reset_index().melt(
+        id_vars='Disease', 
+        value_vars='MSE',
+        var_name='Metric', 
+        value_name='Value'
+    )
+
+    # plotting MSE
+    plt.figure(figsize=(10,6))
+    sns.barplot(x='Disease', y='Value', data=mse_melted_bl, palette='viridis')
+    plt.ylabel('MSE Value', fontsize=16)
+    plt.xlabel('Disease', fontsize=16)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.title('Baseline Model MSE by Disease', fontsize=18)
+    #plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0), fontsize=14)
+    plt.ylim(0, 0.005)
+    plt.tight_layout()
+    plt.savefig("baseline_MSE.png")
+
+    # plotting R^2
+
+    # melt df to get just R2
+    r2_melted_bl = all_bl_df.reset_index().melt(
+    id_vars='Disease', 
+    value_vars='R2',
+    var_name='Metric', 
+    value_name='Value'
+    )
+
+    # plotting R^2
+    plt.figure(figsize=(10,6))
+    sns.barplot(x='Disease', y='Value', data=r2_melted_bl, palette='viridis')
+    plt.ylabel('$R^2$', fontsize=16)
+    plt.xlabel('Disease', fontsize=16)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.title('Baseline Model $R^2$ by Disease', fontsize=18)
+    #plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0), fontsize=14)
+    plt.ylim(0, 0.35)
+    plt.tight_layout()
+    plt.savefig("baseline_R2.png")
