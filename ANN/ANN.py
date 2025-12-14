@@ -9,6 +9,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
 from torch_geometric.data import Data
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import itertools
 
 np.random.seed(42)
@@ -210,6 +211,8 @@ class FitModel():
         metrics = {
             'loss' : loss.item(), 
             'accuracy' : accuracy.item(),
+            'y_true' : y_true_binary.cpu().numpy(), # move back to CPU and convert to NumPy for confusion matrix plotting
+            'y_pred' : y_pred_binary.cpu().numpy()
         }
 
         return metrics
@@ -331,6 +334,9 @@ class FitModel():
         # plot train and val mse over epochs
         self.plot(train_losses, val_losses, epoch_nums)
 
+        # plot confusion matrices for each split for best model
+        self.plot_confusion(best_train_metrics, best_val_metrics, test_metrics)
+
         return loss.item(), best_val_loss
         
     def hp_tuning(self, num_features, dataset):
@@ -350,6 +356,9 @@ class FitModel():
         -------
         best_params : dictonary
             Combination of parameters that produced the lowest validation loss.
+
+        Citation: Van den Berg, T. Parameter Grid-searching with Python's itertools. SITMO Machine Learning | Quantitative Finance (2020). 
+        Published December 29, 2020. https://www.sitmo.com/grid-searching-for-optimal-hyperparameters-with-itertools/
         '''
 
         # define parameter space (learning rate, dropout rate, n_neurons)
@@ -416,9 +425,38 @@ class FitModel():
         plt.legend()
         plt.savefig('loss_over_epochs.png')
 
-    ###### TO DO #######
-    def plot_confusion(self):
-        plt.figure()
+    def plot_confusion(self, train_metrics, val_metrics, test_metrics):
+        '''
+        Plots confusion matrices for training, validation, and test sets.
+
+        Parameters
+        ----------
+        train_metrics : dict
+            Loss, accuracy, predictions, and true labels for training data.
+
+        val metrics : dict
+            Loss, accuracy, predictions, and true labels for validation data.
+
+        test_metrics : dict
+            Loss, accuracy, predictions, and true labels for test data.
+        '''
+        all_metrics = {
+            'Training' : train_metrics,
+            'Validation' : val_metrics,
+            'Test' : test_metrics
+        }
+
+        fig, axs = plt.subplots(1, 3, figsize=(15,5))
+
+        for i, (split, metric) in enumerate(all_metrics.items()):
+            accuracy = metric['accuracy']
+            cm = confusion_matrix(metric['y_true'], metric['y_pred'])
+            disp = ConfusionMatrixDisplay(cm, display_labels=['No Disease', 'Disease'])
+            disp.plot(cmap=plt.cm.Blues, ax=axs[i])
+            axs[i].set_title(f'{split}\nAccuracy : {(accuracy*100):.2f}%')
+
+        plt.tight_layout()
+        plt.savefig('confusion_matrices.png')
 
 if __name__ == '__main__':
 
