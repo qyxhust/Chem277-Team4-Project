@@ -446,10 +446,11 @@ class FitModel():
 
         for i, (split, metric) in enumerate(all_metrics.items()):
             accuracy = metric['accuracy']
+            loss = metric['loss']
             cm = confusion_matrix(metric['y_true'], metric['y_pred'])
             disp = ConfusionMatrixDisplay(cm, display_labels=['No Disease', 'Disease'])
             disp.plot(cmap=plt.cm.Blues, ax=axs[i])
-            axs[i].set_title(f'{split}\nAccuracy : {(accuracy*100):.2f}%', fontsize=14)
+            axs[i].set_title(f'{split}\nAccuracy : {(accuracy*100):.2f}%\nBCE Loss: {loss:.2f}', fontsize=14)
             axs[i].set_xlabel(axs[i].get_xlabel(), fontsize=14)
             axs[i].set_ylabel(axs[i].get_ylabel(),fontsize=14)
             axs[i].tick_params(axis = 'x', labelsize=12)
