@@ -16,7 +16,7 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 # get dataset
-def get_tensors(filepath): 
+def get_tensors(filepath, device): 
     '''
     Creates x and y tensors based on GNPC data labels for each disease and protein abundance values.
 
@@ -29,52 +29,47 @@ def get_tensors(filepath):
     -------
     data_obj : PyTorch Data Object
     '''
-    # read in dataset and drop irrelevant cols
-    df = pd.read_csv(filepath)
-    df.drop(columns = ['Unnamed: 0', 'sample_id'], axis = 1, inplace=True)
-
-    # create a new column where 1 indicates disease, 0 indicates no disease
-    label_cols = ['ad', 'pd', 'ftd', 'als']
-    df['disease'] = df[label_cols].max(axis=1)
-
-    # get labels and convert to np array
-    y_df = df['disease']
-    y_np = y_df.to_numpy()
+    # load in data object
+    data = torch.load(filepath, map_location=device, weights_only=False)
+    x_np = data.x.cpu().numpy() # features
+    y_np = data.y.cpu().numpy() # labels (binary)
     y_re = y_np.reshape(-1, 1) # reshape to 2D to match input size
 
-    # address class imbalance - get weights for BCE loss
+    # create training, validation, and testing masks (70/15/15 split)
+    N = x_np.shape[0]
+    split_labels = np.random.choice([0, 1, 2], N, p = [0.7, 0.15, 0.15]) # 0 is train, 1 is val, 2 is test
+
+    train_mask_np = (split_labels == 0) # need np array to fit x_train
+
+    train_mask = torch.tensor(train_mask_np, dtype=torch.bool).to(device)
+    val_mask = torch.tensor(split_labels==1, dtype=torch.bool).to(device)
+    test_mask = torch.tensor(split_labels==2, dtype=torch.bool).to(device)
+
+    # fit only training data
+    scaler = StandardScaler()
+    x_train = x_np[train_mask_np]
+    scaler.fit(x_train)
+    
+    # scale all features
+    x_scaled = scaler.transform(x_np)
+
+    # address class imbalance - get weight for BCE loss
     '''Citation: Tantai H. Use Weighted Loss Function to Solve Imbalanced Data Classification Problems. 
     Medium. Published February 27, 2023. Accessed December 13, 2025. 
     https://medium.com/@zergtant/use-weighted-loss-function-to-solve-imbalanced-data-classification-problems-749237f38b75 '''
-    disease = y_df.sum()
-    no_disease = len(y_df) - disease
+    disease = y_np.sum()
+    no_disease = len(y_np) - disease
 
-    weight_class0 = len(y_df) / (no_disease * 2)
-    weight_class1 = len(y_df) / (disease * 2)
+    weight_class0 = len(y_np) / (no_disease * 2) 
+    weight_class1 = len(y_np) / (disease * 2)
 
-    weight = torch.tensor([weight_class1])
-
-    # get features
-    x_df = df.iloc[:, 4:]
-    x_np = x_df.to_numpy()
-
-    # scale features
-    scaler = StandardScaler()
-
-    x_scaled = scaler.fit_transform(x_np)
+    weight = torch.tensor([weight_class1]).to(device) # only pass in weight for majority class
 
     # create x and y tensors
-    x = torch.tensor(x_scaled, dtype=torch.float32)
-    y = torch.tensor(y_re, dtype=torch.long)
+    x = torch.tensor(x_scaled, dtype=torch.float32).to(device)
+    y = torch.tensor(y_re, dtype=torch.long).to(device)
 
-    # create training, validation, and testing masks (70/15/15 split)
-    N = x_df.shape[0]
-    split_labels = np.random.choice([0, 1, 2], N, p = [0.7, 0.15, 0.15]) # 0 is train, 1 is val, 2 is test
-
-    train_mask = torch.tensor(split_labels==0, dtype=torch.bool)
-    val_mask = torch.tensor(split_labels==1, dtype=torch.bool)
-    test_mask = torch.tensor(split_labels==2, dtype=torch.bool)
-
+    # create data object
     data_obj = Data(
         x=x,
         y=y,
@@ -151,7 +146,7 @@ class FitModel():
 
     def get_scaled_BCE(self, dataset, mask):
         '''
-        Calculates the binary cross entry loss for the relevant data split in the scaled space for training.
+        Calculates the binary cross entry loss for the relevant data split.
 
         Parameters
         ----------
@@ -174,7 +169,7 @@ class FitModel():
 
         x = dataset.x.to(device)
         out1 = self.model(x) 
-        criterion = torch.nn.BCEWithLogitsLoss(pos_weight = dataset.weight)
+        criterion = torch.nn.BCEWithLogitsLoss(pos_weight = dataset.weight) # logits loss incorporates sigmoid activation
         BCE_loss = criterion(out1[mask], dataset.y[mask].float()) # calculate BCE loss
         return BCE_loss
 
@@ -200,9 +195,10 @@ class FitModel():
         y_true = dataset.y[mask].float()
         y_pred = out1[mask]
 
-        # get class (all values > 0.5 are converted to True, all < 0.5 converted to False)
+        # get class (all values > 0.5 are converted to True, all < 0.5 converted to False for y_true)
+        # y_pred is raw logits - use threshold of 0.0
         y_true_binary = (y_true > 0.5).float()
-        y_pred_binary = (y_pred > 0.5).float()
+        y_pred_binary = (y_pred > 0.0).float()
 
         # calculate accuracy
         accuracy = (y_pred_binary == y_true_binary).sum() / y_true_binary.size()[0]
@@ -217,7 +213,7 @@ class FitModel():
 
         return metrics
 
-    def run(self, dataset, N_epochs : int = 50):
+    def run(self, dataset, N_epochs : int = 100):
         '''
         Runs the training loop, validation, and testing on the best model identified by validation loss.
 
@@ -374,7 +370,7 @@ class FitModel():
         best_params = None
 
         for lr, n_neurons, dr, wd in itertools.product(param_grid['learning_rate'], param_grid['n_neurons'], 
-                                                   param_grid['dropout_rate'], param_grid['weight_decay']): # remember to CITE!!
+                                                   param_grid['dropout_rate'], param_grid['weight_decay']): 
 
             # initialize model instance to push to GPU
             model = my_ANN(num_features=num_features, num_neurons=n_neurons, dropout=dr)
@@ -453,7 +449,11 @@ class FitModel():
             cm = confusion_matrix(metric['y_true'], metric['y_pred'])
             disp = ConfusionMatrixDisplay(cm, display_labels=['No Disease', 'Disease'])
             disp.plot(cmap=plt.cm.Blues, ax=axs[i])
-            axs[i].set_title(f'{split}\nAccuracy : {(accuracy*100):.2f}%')
+            axs[i].set_title(f'{split}\nAccuracy : {(accuracy*100):.2f}%', fontsize=14)
+            axs[i].set_xlabel(axs[i].get_xlabel(), fontsize=14)
+            axs[i].set_ylabel(axs[i].get_ylabel(),fontsize=14)
+            axs[i].tick_params(axis = 'x', labelsize=12)
+            axs[i].tick_params(axis = 'y', labelsize=12)
 
         plt.tight_layout()
         plt.savefig('confusion_matrices.png')
@@ -462,14 +462,11 @@ if __name__ == '__main__':
 
     # use GPU if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    data = get_tensors('/home/devle/chem_277B/Chem277-Team4-Project/ANN/cleaned_data_5SD_8000NaN_removed.csv')
-
-    # push data to GPU
-    data.to(device)
+    data = get_tensors('/home/devle/chem_277B/Chem277-Team4-Project/ANN/binary_label_data.pt', device)
 
     # run model
     my_model = my_ANN(num_features=data.x.shape[1], num_neurons=16, dropout=0.5) # based on hyperparameter search
     my_model = my_model.to(device)
-    My_Fit = FitModel(my_model, learning_rate=0.0005, weight_decay=0.005) # based on hyperparameter search
+    My_Fit = FitModel(my_model, learning_rate=0.001, weight_decay=0.005) # based on hyperparameter search
     My_Fit.run(data)
     #My_Fit.hp_tuning(num_features=data.x.shape[1], dataset=data)
