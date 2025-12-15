@@ -1,15 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 
 import torch
-import torch.nn.functional as F
-from torch.nn import Linear, ReLU, Sigmoid, Softmax, BCELoss,  Dropout
+from torch.nn import Linear, ReLU, BCEWithLogitsLoss, Dropout
 from torch.optim import Adam
-from torch.utils.data import DataLoader, TensorDataset
 from torch_geometric.data import Data
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
 import itertools
 import os
 
@@ -142,7 +140,7 @@ class FitModel():
         '''
         
         # Adam for optimization
-        self.optimizer = torch.optim.Adam(my_model.parameters(), lr = learning_rate, weight_decay=weight_decay)
+        self.optimizer = Adam(my_model.parameters(), lr = learning_rate, weight_decay=weight_decay)
         self.model = my_model
 
     def get_scaled_BCE(self, dataset, mask):
@@ -170,7 +168,7 @@ class FitModel():
 
         x = dataset.x.to(device)
         out1 = self.model(x) 
-        criterion = torch.nn.BCEWithLogitsLoss(pos_weight = dataset.weight) # logits loss incorporates sigmoid activation
+        criterion = BCEWithLogitsLoss(pos_weight = dataset.weight) # logits loss incorporates sigmoid activation
         BCE_loss = criterion(out1[mask], dataset.y[mask].float()) # calculate BCE loss
         return BCE_loss
 
@@ -471,7 +469,7 @@ if __name__ == '__main__':
     script_dir = os.path.dirname(os.path.abspath(__file__))
     filepath = os.path.join(script_dir, 'binary_label_data.pt')
     data = get_tensors(filepath, device) 
-    
+
     # run model
     my_model = my_ANN(num_features=data.x.shape[1], num_neurons=16, dropout=0.5) # based on hyperparameter search
     my_model = my_model.to(device)
