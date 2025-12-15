@@ -54,9 +54,9 @@ def get_tensors(filepath, device):
     x_scaled = scaler.transform(x_np)
 
     # address class imbalance - get weight for BCE loss
-    '''Citation: Tantai H. Use Weighted Loss Function to Solve Imbalanced Data Classification Problems. 
+    '''Citation:  Tantai H. Use Weighted Loss Function to Solve Imbalanced Data Classification Problems. 
     Medium. Published February 27, 2023. Accessed December 13, 2025. 
-    https://medium.com/@zergtant/use-weighted-loss-function-to-solve-imbalanced-data-classification-problems-749237f38b75 '''
+    https://medium.com/@zergtant/use-weighted-loss-function-to-solve-imbalanced-data-classification-problems-749237f38b75'''
     disease = y_np.sum()
     no_disease = len(y_np) - disease
 
@@ -162,8 +162,8 @@ class FitModel():
             The binary cross entropy loss.
 
         Citation for last 2 lines: Tantai H. Use Weighted Loss Function to Solve Imbalanced Data Classification Problems. 
-        Medium. Published February 27, 2023. Accessed December 13, 2025. 
-        https://medium.com/@zergtant/use-weighted-loss-function-to-solve-imbalanced-data-classification-problems-749237f38b75
+    Medium. Published February 27, 2023. Accessed December 13, 2025. 
+    https://medium.com/@zergtant/use-weighted-loss-function-to-solve-imbalanced-data-classification-problems-749237f38b75
         
         '''
 
@@ -232,9 +232,10 @@ class FitModel():
         best_val_loss : float
             Best validation loss found over N_epochs.
 
-        Citation for early stopping: Cyborg. What is Early Stopping in Deep Learning?. 
-        Medium (2024). Published April 5, 2024. 
+        Citation for early stopping: Cyborg. What is Early Stopping in Deep Learning? Medium. 
+        Published April 5, 2024. Accessed December 13, 2025. 
         https://cyborgcodes.medium.com/what-is-early-stopping-in-deep-learning-eeb1e710a3cf
+
         '''
 
         best_val_loss = float('inf')
@@ -353,8 +354,9 @@ class FitModel():
         best_params : dictonary
             Combination of parameters that produced the lowest validation loss.
 
-        Citation: Van den Berg, T. Parameter Grid-searching with Python's itertools. SITMO Machine Learning | Quantitative Finance (2020). 
-        Published December 29, 2020. https://www.sitmo.com/grid-searching-for-optimal-hyperparameters-with-itertools/
+        Citation: Van den Berg T. Parameter Grid-searching with Python's itertools. SITMO Machine Learning | Quantitative Finance. 
+        Published December 29, 2020. Accessed December 13, 2025. 
+        https://www.sitmo.com/grid-searching-for-optimal-hyperparameters-with-itertools/
         '''
 
         # define parameter space (learning rate, dropout rate, n_neurons)
@@ -463,7 +465,7 @@ if __name__ == '__main__':
 
     # use GPU if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    data = get_tensors('/home/devle/chem_277B/Chem277-Team4-Project/ANN/binary_label_data.pt', device)
+    data = get_tensors('/home/devle/chem_277B/Chem277-Team4-Project/ANN/binary_label_data.pt', device) # ****remember to change before pushing to main****
 
     # run model
     my_model = my_ANN(num_features=data.x.shape[1], num_neurons=16, dropout=0.5) # based on hyperparameter search
