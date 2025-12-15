@@ -79,7 +79,7 @@ def eval_model_detailed(model, data, mask, y_mean, y_std, split_name="Test"):
         pred_ad, pred_pd, pred_ftd, pred_als, _ = model(data)
         preds = torch.cat([pred_ad, pred_pd, pred_ftd, pred_als], dim=1)
 
-    y = data.y[mask].cpu().numpy()
+    y = data.y[mask].cpu().numpy() # move true values and predicts back to CPU
     yhat = preds[mask].cpu().numpy()
 
     y_orig = (y * y_std[None, :]) + y_mean[None, :] # broadcasting needed so that inverse transformation is correct
@@ -132,6 +132,12 @@ def train_one_config(
 
 
 def hp_tuning(data, device):
+    '''
+    Citation:
+    Van den Berg T. Parameter Grid-searching with Python's itertools. SITMO Machine Learning | Quantitative Finance. 
+    Published December 29, 2020. Accessed December 13, 2025. 
+    https://www.sitmo.com/grid-searching-for-optimal-hyperparameters-with-itertools/
+    '''
     
     ## simple grid search over a small hyperparameter space.
   
