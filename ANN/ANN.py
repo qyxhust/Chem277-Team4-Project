@@ -11,6 +11,7 @@ from torch_geometric.data import Data
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import itertools
+import os
 
 np.random.seed(42)
 torch.manual_seed(42)
@@ -465,8 +466,12 @@ if __name__ == '__main__':
 
     # use GPU if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    data = get_tensors('/home/devle/chem_277B/Chem277-Team4-Project/ANN/binary_label_data.pt', device) # ****remember to change before pushing to main****
 
+    # get filepath using os 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    filepath = os.path.join(script_dir, 'binary_label_data.pt')
+    data = get_tensors(filepath, device) 
+    
     # run model
     my_model = my_ANN(num_features=data.x.shape[1], num_neurons=16, dropout=0.5) # based on hyperparameter search
     my_model = my_model.to(device)
