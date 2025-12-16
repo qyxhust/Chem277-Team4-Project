@@ -18,4 +18,4 @@ The repository contents are as follows:
 
 **src:** The ANN folder contains the file ANN.py, which defines the ANN model and performs training, hyperparameter tuning, and plotting. This file requires the download of the torch data object 'binary_data.pt' from the Google Drive link below.
 
-Data files that were too large to upload to GitHub are available for download from Google Drive: (LINK)
+Data files that were too large to upload to GitHub are available for download from Google Drive: [LINK](https://drive.google.com/file/d/1nlMvfXWzfrRaQgN2R3YtEnHS7OiGsCJb/view?usp=sharing)
