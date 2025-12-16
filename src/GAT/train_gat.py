@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 from torch_geometric.loader import DataLoader
 
 from data.dataset import patient_graph_dataset
-from gat_proper import gat_model
+from GAT.gat_model import gat_model
 from protein_gat_trainer import plot_training_history, plot_confusion_matrix
 
 

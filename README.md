@@ -8,14 +8,22 @@ The repository contents are as follows:
 
 **data:** The data folder contains the file `load.py` that generates a PyTorch Geometric Data object where data can be accessed for training and `uniprot_util` which contains helper functions to interact with UniProt's API. There is no need to run these files unless you want to change data filter parameters. Training data is provided in the Google Drive link at the bottom. 
 
-**entrypoint:**
 
-**models:**
+**src:/ANN:** The ANN folder contains the file ANN.py, which defines the ANN model and performs training, hyperparameter tuning, and plotting. This file requires the download of the torch data object 'binary_data.pt' from the Google Drive link below.
+**src/GAT:** The GAT folder contains the implementation of a Graph Attention Network that incorporates protein-protein interactions from the STRING database. The folder includes:
 
-**notebooks:**
+- `gat_model.py`: Defines the GAT model architecture with two graph attention layers
+- `train_gat.py`: Training script with threshold optimization on the validation set
+- `dataset.py`: Data loading utilities for patient graphs
+- `restructure_to_patient_graphs.py`: Script to construct patient-level graphs from the PPI network
 
-**plots:**
+The training script implements threshold optimization using F1-score maximization to improve disease detection while balancing overall accuracy. This approach achieves a 2.7-fold improvement in disease detection sensitivity compared to the ANN baseline (65.52% vs 24.1% recall).
 
-**src:** The ANN folder contains the file ANN.py, which defines the ANN model and performs training, hyperparameter tuning, and plotting. This file requires the download of the torch data object 'binary_data.pt' from the Google Drive link below.
+To run the GAT training:
+1. Download `patient_graphs_dataset.pt` and `binary_label_data_fixed.pt` from the Google Drive link below
+2. Place files in the data directory
+3. Run: `python src/GAT/train_gat_proper.py`
+
+The script outputs confusion matrices, training history plots, and comprehensive results including logits for threshold analysis.
 
 Data files that were too large to upload to GitHub are available for download from Google Drive: [LINK](https://drive.google.com/file/d/1nlMvfXWzfrRaQgN2R3YtEnHS7OiGsCJb/view?usp=sharing)
