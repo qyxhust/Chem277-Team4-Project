@@ -1,7 +1,0 @@
-{
-  "lr": 0.001,
-  "hidden_dim": 128,
-  "dropout": 0.3,
-  "heads": 8,
-  "weight_decay": 0.0001
-}
