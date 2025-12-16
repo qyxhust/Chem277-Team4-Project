@@ -6,7 +6,7 @@ This repository contains code to predict neurodegenerative disease status using 
 
 The repository contents are as follows:
 
-**data:**
+**data:** The data folder contains the file `load.py` that generates a PyTorch Geometric Data object where data can be accessed for training and `uniprot_util` which contains helper functions to interact with UniProt's API. There is no need to run these files unless you want to change data filter parameters. Training data is provided in the Google Drive link at the bottom. 
 
 **entrypoint:**
 
