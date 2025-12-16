@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chem277-team4-project"
+version = "0.1.0"
+description = "CHEM277 Team 4 Final project (ANN + GAT)."
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+  "matplotlib~=3.8.4",
+  "numpy",
+  "pandas~=2.3.3",
+  "requests~=2.32.5",
+  "scikit-learn",
+  "torch~=2.2.2",
+]
+
+[project.optional-dependencies]
+gat = [
+  "torch-geometric",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src", "data"]
+include = ["ANN*", "GAT*", "data*"]
+
+[tool.setuptools.package-data]
+ANN = ["*.pt", "*.png"]
+GAT = ["*.pt", "*.png"]

@@ -10,7 +10,9 @@ The repository contents are as follows:
 
 
 **src:/ANN:** The ANN folder contains the file ANN.py, which defines the ANN model and performs training, hyperparameter tuning, and plotting. This file requires the download of the torch data object 'binary_data.pt' from the Google Drive link below.
-**src/GAT:** The GAT folder contains the implementation of a Graph Attention Network that incorporates protein-protein interactions from the STRING database. The folder includes:
+
+
+**src:/GAT:** The GAT folder contains the implementation of a Graph Attention Network that incorporates protein-protein interactions from the STRING database. The folder includes:
 
 - `gat_model.py`: Defines the GAT model architecture with two graph attention layers
 - `train_gat.py`: Training script with threshold optimization on the validation set
