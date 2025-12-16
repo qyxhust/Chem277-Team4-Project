@@ -24,7 +24,7 @@ The training script implements threshold optimization using F1-score maximizatio
 To run the GAT training:
 1. Download `binary_label_data_fixed.pt` from the Google Drive link below.
 2. To generate patient graphs locally, Run: `python src/GAT/restructure_to_patient_graphs.py`
-3. Run: `python src/GAT/train_gat.py`
+3. To start the GAT training, Run: `python src/GAT/train_gat.py`
 
 The script outputs confusion matrices, training history plots, and comprehensive results including logits for threshold analysis.
 
