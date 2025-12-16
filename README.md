@@ -22,7 +22,7 @@ The repository contents are as follows:
 The training script implements threshold optimization using F1-score maximization to improve disease detection while balancing overall accuracy. This approach achieves a 2.7-fold improvement in disease detection sensitivity compared to the ANN baseline (65.52% vs 24.1% recall).
 
 To run the GAT training:
-1. Download `binary_label_data_fixed.pt` from the Google Drive link below (To run the GAT training with the entire features on GPU, also download `patient_graphs_dataset`)
+1. Download `binary_label_data_fixed.pt`  and  `patient_graphs_dataset`  (individual patient graph files) from the Google Drive link below.
 2. Place files in the data directory
 3. Run: `python src/GAT/train_gat.py`
 
