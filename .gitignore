@@ -9,3 +9,10 @@ __pycache__/
 
 # virtual environments
 .venv/
+
+# macOS
+.DS_Store
+
+# notebooks / tests
+.ipynb_checkpoints/
+.pytest_cache/
